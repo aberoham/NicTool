@@ -61,6 +61,7 @@ sub do_the_tests {
     ####################
 
     test_secure_compare();
+    test_valid_password();
 
     ####################
     # setup            #
@@ -685,4 +686,35 @@ sub test_secure_compare {
     # high-byte / unicode-ish bytes
     ok( NicToolServer::User::_secure_compare( "\xff\x00\xff", "\xff\x00\xff" ), 'binary equal' );
     ok( !NicToolServer::User::_secure_compare( "\xff\x00\xff", "\xff\x01\xff" ), 'binary differ' );
+}
+
+sub test_valid_password {
+    my $user = bless {}, 'NicToolServer::User';
+    my ( $pass, $salt ) = ( 'S3cret!pass', 'abcdefghijklmnop' );
+
+    # self-describing "iterations$hexHash" rows as the v3 api writes them;
+    # fixtures built via Crypt::KeyDerivation, not get_pbkdf2_hash
+    for my $cost ( 5_000, 220_000 ) {
+        my $stored = $cost . '$'
+            . unpack( "H*", Crypt::KeyDerivation::pbkdf2( $pass, $salt, $cost, 'SHA512' ) );
+        ok( $user->valid_password( $pass,   $stored, 'u@example.com', $salt ), "self-describing cost $cost accepts correct password" );
+        ok( !$user->valid_password( 'wrong', $stored, 'u@example.com', $salt ), "self-describing cost $cost rejects wrong password" );
+    }
+
+    # stored cost is untrusted input: refuse amplification beyond v3's cap,
+    # and refuse a zero cost
+    my $over_cap = '1000001$' . ( 'ab' x 32 );
+    ok( !$user->valid_password( $pass, $over_cap, 'u@example.com', $salt ),
+        'self-describing cost above cap rejected' );
+    ok( !$user->valid_password( $pass, "0\$" . ( 'ab' x 32 ), 'u@example.com', $salt ),
+        'self-describing zero cost rejected' );
+
+    # malformed hex length must not match anything
+    ok( !$user->valid_password( $pass, "5000\$deadbeef", 'u@example.com', $salt ),
+        'self-describing short hash rejected' );
+
+    # legacy raw PBKDF2-5000 hex rows still verify
+    my $legacy = $user->get_pbkdf2_hash( $pass, $salt );
+    ok( $user->valid_password( $pass,    $legacy, 'u@example.com', $salt ), 'legacy PBKDF2-5000 accepts correct password' );
+    ok( !$user->valid_password( 'wrong', $legacy, 'u@example.com', $salt ), 'legacy PBKDF2-5000 rejects wrong password' );
 }

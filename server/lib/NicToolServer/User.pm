@@ -611,6 +611,18 @@ sub valid_password {
 
         # Check for PBKDF2 password
         if ($salt) {
+            # v3 stores hashes self-describing as "iterations$hexHash" and
+            # upgrades shared rows on login; honor the stored cost so either
+            # stack can authenticate the same account. Cap mirrors v3's.
+            if ( $db_pass =~ /\A(\d+)\$([0-9a-f]{64})\z/ ) {
+                my ( $cost, $stored_hash ) = ( $1, $2 );
+                return 0 if $cost < 1 || $cost > 1_000_000;
+
+                my $hashed = $self->get_pbkdf2_hash( $attempt, $salt, $cost );
+                return 1 if _secure_compare( $hashed, $stored_hash );
+                return 0;
+            }
+
             my $hashed = $self->get_pbkdf2_hash( $attempt, $salt );
             return 1 if _secure_compare( $hashed, $db_pass );
         }
@@ -712,9 +724,10 @@ sub get_sha1_hash {
 }
 
 sub get_pbkdf2_hash {
-    my ( $self, $pass, $salt ) = @_;
-    $salt ||= $self->_get_salt();
-    return unpack( "H*", Crypt::KeyDerivation::pbkdf2( $pass, $salt, 5000, 'SHA512' ) );
+    my ( $self, $pass, $salt, $iterations ) = @_;
+    $iterations ||= 5000;
+    $salt       ||= $self->_get_salt();
+    return unpack( "H*", Crypt::KeyDerivation::pbkdf2( $pass, $salt, $iterations, 'SHA512' ) );
 }
 
 sub _get_salt {
