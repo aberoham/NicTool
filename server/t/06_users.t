@@ -713,6 +713,19 @@ sub test_valid_password {
     ok( !$user->valid_password( $pass, "5000\$deadbeef", 'u@example.com', $salt ),
         'self-describing short hash rejected' );
 
+    # a self-describing mismatch falls through to LDAP instead of returning 0
+    {
+        my $ldap_user = bless { ldap_hit => 0 }, 'NicToolServer::User';
+        no warnings 'redefine';
+        local *NicToolServer::User::verify_ldap_user = sub { $_[0]->{ldap_hit} = 1; return 1 };
+        local $NicToolServer::ldap_servers = ['ldap.example.com'];
+        my $stored = "220000\$"
+            . unpack( "H*", Crypt::KeyDerivation::pbkdf2( $pass, $salt, 220_000, 'SHA512' ) );
+        ok( $ldap_user->valid_password( 'wrong', $stored, 'u@example.com', $salt ),
+            'self-describing mismatch falls through to LDAP' );
+        ok( $ldap_user->{ldap_hit}, 'LDAP was consulted on local hash mismatch' );
+    }
+
     # legacy raw PBKDF2-5000 hex rows still verify
     my $legacy = $user->get_pbkdf2_hash( $pass, $salt );
     ok( $user->valid_password( $pass,    $legacy, 'u@example.com', $salt ), 'legacy PBKDF2-5000 accepts correct password' );

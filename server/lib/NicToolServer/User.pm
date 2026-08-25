@@ -616,11 +616,12 @@ sub valid_password {
             # stack can authenticate the same account. Cap mirrors v3's.
             if ( $db_pass =~ /\A(\d+)\$([0-9a-f]{64})\z/ ) {
                 my ( $cost, $stored_hash ) = ( $1, $2 );
-                return 0 if $cost < 1 || $cost > 1_000_000;
 
-                my $hashed = $self->get_pbkdf2_hash( $attempt, $salt, $cost );
-                return 1 if _secure_compare( $hashed, $stored_hash );
-                return 0;
+                # on mismatch, fall through so LDAP deployments still authenticate
+                if ( $cost >= 1 && $cost <= 1_000_000 ) {
+                    my $hashed = $self->get_pbkdf2_hash( $attempt, $salt, $cost );
+                    return 1 if _secure_compare( $hashed, $stored_hash );
+                }
             }
 
             my $hashed = $self->get_pbkdf2_hash( $attempt, $salt );
