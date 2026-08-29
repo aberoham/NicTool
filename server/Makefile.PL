@@ -3,38 +3,39 @@ use warnings;
 
 use ExtUtils::MakeMaker;
 
-# DBD::mysql 5.x builds only against the MySQL 8 client library. A host whose
-# mysql_config is MariaDB's (every RHEL and Debian) gets a wall of undeclared
-# MYSQL_OPT_SSL_MODE errors from cpanm and gives up. Say so before that
-# happens, once, loudly.
-{
-    my $cfg = ( grep { -x $_ } map { ("$_/mysql_config", "$_/mariadb_config") }
-        split /:/, $ENV{PATH} )[0];
-    my $ver = $cfg ? `$cfg --version 2>/dev/null` : '';
-    chomp $ver;
-    my $have_dbd = eval { require DBD::mysql; 1 };
-    if ( !$have_dbd && ( !$cfg || $ver =~ /^1\d\./ || $cfg =~ /mariadb_config$/ ) ) {
-        warn <<"EOW";
+# DBD::mysql 5.x builds only against Oracle's MySQL client library, 8.0 or
+# newer. Against MariaDB Connector/C (Debian's only mysql_config, RHEL's
+# default one) it dies on undeclared MYSQL_OPT_SSL_MODE and cpanm shows FAIL
+# (#364). Say why first. Plain cpanm logs this to build.log; `cpanm -v` and
+# `perl Makefile.PL` print it.
+unless ( eval { require DBD::mysql; DBD::mysql->VERSION('4.050'); 1 } ) {
+    my $cfg = $ENV{DBD_MYSQL_CONFIG} || 'mysql_config';
+    my ( $libs, $ver ) =
+        map { my $o = `$cfg --$_ 2>/dev/null` // ''; chomp $o; $o } qw(libs version);
+    my $client =
+        !$libs                                    ? "not found: no $cfg on PATH"
+      : $libs =~ /-lmariadb\b/                    ? "MariaDB Connector/C ($cfg --libs: $libs)"
+      : ( $ver =~ /^(\d+)/ ? $1 : 0 ) < 8         ? "$ver, older than 8.0"
+      :                                             '';
+    warn <<"EOW" if $client;
 
 **********************************************************************
-DBD::mysql is not installed and the client library here is
-@{[ $cfg ? "$cfg ($ver)" : 'not found' ]}.
+DBD::mysql 4.050 or newer is not installed, and the client library here is
+$client.
 
-cpanm will pick DBD::mysql 5.x, which only builds against the MySQL 8
-client library. It does not build against MariaDB's connector, and no
-amount of retrying changes that. Pick one:
+cpanm will pick DBD::mysql 5.x, which builds only against Oracle's
+MySQL client library, 8.0 or newer. Here it will fail. Pick one:
 
-  - install the MySQL 8 client dev package and let cpanm build 5.x
-  - cpanm --notest DBD::mysql\@4.050   (the last release that builds
-    against MariaDB; it is 2020 code, treat it as a stopgap)
-  - use DBD::MariaDB and set DB_ENGINE=MariaDB in nictoolserver.conf
-
-Old client libraries and old perls are the reason installs get stuck.
-Update them; this project will not pin itself to them.
+  - the distro's DBD::mysql package, when it is 4.050 or newer
+    (perl-DBD-MySQL on RHEL 9, libdbd-mysql-perl on Debian; RHEL 8's
+    4.046 is too old)
+  - an Oracle MySQL client dev package, 8.0 or newer, and let cpanm
+    build 5.x (mysql-devel on RHEL: AppStream on 8, CRB on 9)
+  - cpanm --notest DBD::mysql\@4.055: the 4.x line is still maintained
+    and builds against MariaDB Connector/C
 **********************************************************************
 
 EOW
-    }
 }
 
 my %WriteMakefileArgs = (
