@@ -3,6 +3,40 @@ use warnings;
 
 use ExtUtils::MakeMaker;
 
+# DBD::mysql 5.x builds only against the MySQL 8 client library. A host whose
+# mysql_config is MariaDB's (every RHEL and Debian) gets a wall of undeclared
+# MYSQL_OPT_SSL_MODE errors from cpanm and gives up. Say so before that
+# happens, once, loudly.
+{
+    my $cfg = ( grep { -x $_ } map { ("$_/mysql_config", "$_/mariadb_config") }
+        split /:/, $ENV{PATH} )[0];
+    my $ver = $cfg ? `$cfg --version 2>/dev/null` : '';
+    chomp $ver;
+    my $have_dbd = eval { require DBD::mysql; 1 };
+    if ( !$have_dbd && ( !$cfg || $ver =~ /^1\d\./ || $cfg =~ /mariadb_config$/ ) ) {
+        warn <<"EOW";
+
+**********************************************************************
+DBD::mysql is not installed and the client library here is
+@{[ $cfg ? "$cfg ($ver)" : 'not found' ]}.
+
+cpanm will pick DBD::mysql 5.x, which only builds against the MySQL 8
+client library. It does not build against MariaDB's connector, and no
+amount of retrying changes that. Pick one:
+
+  - install the MySQL 8 client dev package and let cpanm build 5.x
+  - cpanm --notest DBD::mysql\@4.050   (the last release that builds
+    against MariaDB; it is 2020 code, treat it as a stopgap)
+  - use DBD::MariaDB and set DB_ENGINE=MariaDB in nictoolserver.conf
+
+Old client libraries and old perls are the reason installs get stuck.
+Update them; this project will not pin itself to them.
+**********************************************************************
+
+EOW
+    }
+}
+
 my %WriteMakefileArgs = (
     "ABSTRACT" => "NicTool API reference server",
     "AUTHOR"   => "Matt Simerson <msimerson\@cpan.org>, Damon Edwards, Abraham Ingersoll, Greg Schueler",
