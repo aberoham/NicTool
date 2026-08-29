@@ -28,7 +28,7 @@ MySQL client library, 8.0 or newer. Here it will fail. Pick one:
   - an Oracle MySQL client dev package, 8.0 or newer, and let cpanm
     build 5.x (mysql-devel on RHEL: AppStream on 8, CRB on 9)
   - cpanm --notest DBD::mysql\@4.055: the 4.x line is still maintained
-    and builds against MariaDB Connector/C
+    and builds against MySQL and MariaDB
 **********************************************************************
 
 EOW
