@@ -3,6 +3,37 @@ use warnings;
 
 use ExtUtils::MakeMaker;
 
+# Plain cpanm sends this to build.log; cpanm -v and perl Makefile.PL print it (#364).
+unless ( eval { require DBD::mysql; DBD::mysql->VERSION('4.050'); 1 } ) {
+    my $cfg = $ENV{DBD_MYSQL_CONFIG} || 'mysql_config';
+    my ( $libs, $ver ) =
+        map { my $o = `$cfg --$_ 2>/dev/null` // ''; chomp $o; $o } qw(libs version);
+    my $client =
+        !$libs                                    ? "not found: no $cfg on PATH"
+      : $libs =~ /-lmariadb\b/                    ? "MariaDB Connector/C ($cfg --libs: $libs)"
+      : ( $ver =~ /^(\d+)/ ? $1 : 0 ) < 8         ? "$ver, older than 8.0"
+      :                                             '';
+    warn <<"EOW" if $client;
+
+**********************************************************************
+DBD::mysql 4.050 or newer is not installed, and the client library here is
+$client.
+
+cpanm will pick DBD::mysql 5.x, which builds only against Oracle's
+MySQL client library, 8.0 or newer. Here it will fail. Pick one:
+
+  - the distro's DBD::mysql package, when it is 4.050 or newer
+    (perl-DBD-MySQL on RHEL 9, libdbd-mysql-perl on Debian; RHEL 8's
+    4.046 is too old)
+  - an Oracle MySQL client dev package, 8.0 or newer, and let cpanm
+    build 5.x (mysql-devel on RHEL: AppStream on 8, CRB on 9)
+  - cpanm --notest DBD::mysql\@4.055: the 4.x line is still maintained
+    and builds against MySQL and MariaDB
+**********************************************************************
+
+EOW
+}
+
 my %WriteMakefileArgs = (
     "ABSTRACT" => "NicTool API reference server",
     "AUTHOR"   => "Matt Simerson <msimerson\@cpan.org>, Damon Edwards, Abraham Ingersoll, Greg Schueler",
