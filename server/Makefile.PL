@@ -3,11 +3,7 @@ use warnings;
 
 use ExtUtils::MakeMaker;
 
-# DBD::mysql 5.x builds only against Oracle's MySQL client library, 8.0 or
-# newer. Against MariaDB Connector/C (Debian's only mysql_config, RHEL's
-# default one) it dies on undeclared MYSQL_OPT_SSL_MODE and cpanm shows FAIL
-# (#364). Say why first. Plain cpanm logs this to build.log; `cpanm -v` and
-# `perl Makefile.PL` print it.
+# Plain cpanm sends this to build.log; cpanm -v and perl Makefile.PL print it (#364).
 unless ( eval { require DBD::mysql; DBD::mysql->VERSION('4.050'); 1 } ) {
     my $cfg = $ENV{DBD_MYSQL_CONFIG} || 'mysql_config';
     my ( $libs, $ver ) =
