@@ -14,6 +14,7 @@ my $db_host   = $ENV{DB_HOSTNAME}     || '127.0.0.1';
 my $db_name   = $ENV{NICTOOL_DB_NAME} || 'nictool';
 my $db_user   = $ENV{NICTOOL_DB_USER}          or die "Set NICTOOL_DB_USER\n";
 my $db_pass   = $ENV{NICTOOL_DB_USER_PASSWORD} or die "Set NICTOOL_DB_USER_PASSWORD\n";
+my $test_gid;
 
 # Generate a random password for the test user
 my $test_pass = _random_password(20);
@@ -27,32 +28,57 @@ $opts{mysql_ssl} = 1 if $ENV{DB_SSL};
 my $dbh = DBI->connect( $dsn, $db_user, $db_pass, \%opts )
     or die "Cannot connect to $dsn: $DBI::errstr\n";
 
-# Check if test group already exists
-my ($group_exists) = $dbh->selectrow_array("SELECT COUNT(*) FROM nt_group WHERE nt_group_id = 2");
+# The ids are whatever the database hands out: a database with real data
+# in it already has a group 2 and a user 2.
+($test_gid) = $dbh->selectrow_array(
+    "SELECT nt_group_id FROM nt_group WHERE parent_group_id = 1 AND name = 'test_group' AND deleted = 0"
+);
 
-unless ($group_exists) {
+unless ($test_gid) {
     print "Creating test group and user...\n";
-    $dbh->do("INSERT INTO nt_group VALUES (2,1,'test_group', 0)");
-    $dbh->do("INSERT INTO nt_group_log VALUES (2,1,1,'added',UNIX_TIMESTAMP(),2,1,'test_group')");
-    $dbh->do("INSERT INTO nt_group_subgroups VALUES (1,2,1000)");
+    $dbh->do("INSERT INTO nt_group (parent_group_id, name, deleted) VALUES (1,'test_group', 0)");
+    $test_gid = $dbh->last_insert_id( undef, undef, 'nt_group', 'nt_group_id' );
     $dbh->do(
-        "INSERT INTO nt_perm VALUES (2,2,NULL,NULL,NULL,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,'1,2,3',0)"
+        "INSERT INTO nt_group_log (nt_group_id, nt_user_id, action, timestamp, modified_group_id, parent_group_id, name)
+         VALUES (?,1,'added',UNIX_TIMESTAMP(),?,1,'test_group')",
+        undef, $test_gid, $test_gid
     );
 }
 
-# Check if test user already exists
-my ($user_exists) =
-    $dbh->selectrow_array("SELECT COUNT(*) FROM nt_user WHERE username = 'nictest'");
+# a test_group that was there already may be a plain group: give it what the tests need
+my ($linked) = $dbh->selectrow_array(
+    "SELECT COUNT(*) FROM nt_group_subgroups WHERE nt_group_id = 1 AND nt_subgroup_id = ?", undef, $test_gid );
+$dbh->do( "INSERT INTO nt_group_subgroups VALUES (1,?,1000)", undef, $test_gid ) unless $linked;
+my ($perm_exists) = $dbh->selectrow_array(
+    "SELECT COUNT(*) FROM nt_perm WHERE nt_group_id = ? AND nt_user_id IS NULL AND deleted = 0",
+    undef, $test_gid );
+unless ($perm_exists) {
+    $dbh->do(
+        "INSERT INTO nt_perm (nt_group_id, nt_user_id, inherit_perm, perm_name,
+            group_write, group_create, group_delete, zone_write, zone_create, zone_delegate, zone_delete,
+            zonerecord_write, zonerecord_create, zonerecord_delegate, zonerecord_delete,
+            user_write, user_create, user_delete, nameserver_write, nameserver_create, nameserver_delete,
+            self_write, usable_ns, deleted)
+         VALUES (?,NULL,NULL,NULL,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,'1,2,3',0)",
+        undef, $test_gid
+    );
+}
+
+# logins are user\@group, so only a nictest in the test group counts
+my ($user_exists) = $dbh->selectrow_array(
+    "SELECT COUNT(*) FROM nt_user WHERE username = 'nictest' AND nt_group_id = ? AND deleted = 0",
+    undef, $test_gid );
 
 if ($user_exists) {
-    $dbh->do( "UPDATE nt_user SET password = ?, pass_salt = ? WHERE username = 'nictest'",
-        undef, $pass_hash, $salt );
+    $dbh->do( "UPDATE nt_user SET password = ?, pass_salt = ? WHERE username = 'nictest' AND nt_group_id = ?",
+        undef, $pass_hash, $salt, $test_gid );
     print "Updated test user 'nictest' password.\n";
 }
 else {
     $dbh->do(
-        "INSERT INTO nt_user VALUES (2,2,'TestFirst','TestLast','nictest',?,?,'test\@example.com',NULL,0)",
-        undef, $pass_hash, $salt
+        "INSERT INTO nt_user (nt_group_id, first_name, last_name, username, password, pass_salt, email, is_admin, deleted)
+         VALUES (?,'TestFirst','TestLast','nictest',?,?,'test\@example.com',NULL,0)",
+        undef, $test_gid, $pass_hash, $salt
     );
     print "Created test user 'nictest'.\n";
 }
