@@ -33,6 +33,16 @@ my $group1 = $nt_api->get_group( nt_group_id => $gid1 );
 noerrok($group1) && is( $group1->id, $gid1 )
     or die "Couldn't get test group1";
 
+$bind->{group_id} = $group1;
+
+eval { $bind->import_records('t/fixtures/named.conf'); 1 };
+my $import_error = $@;
+ok( !$import_error, 'initial import succeeds' ) or diag $import_error;
+
+eval { $bind->import_records('t/fixtures/named.conf'); 1 };
+$import_error = $@;
+ok( !$import_error, 'rerun import succeeds with existing records' ) or diag $import_error;
+
 my @nameserver_ids;
 for my $number ( 1 .. 3 ) {
     $res = $group1->new_nameserver(
@@ -57,15 +67,13 @@ noerrok($res) && ok( $res->get('nt_nameserver_id') =~ qr/^\d+$/ )
     or die "Couldn't create the parent group nameserver";
 push @nameserver_ids, $res->get('nt_nameserver_id');
 
-$bind->{group_id} = $group1;
-
-eval { $bind->import_records('t/fixtures/named.conf'); 1 };
-my $import_error = $@;
-ok( !$import_error, 'initial import succeeds' ) or diag $import_error;
-
-eval { $bind->import_records('t/fixtures/named.conf'); 1 };
+eval { $bind->import_records('t/fixtures/import-bind.conf'); 1 };
 $import_error = $@;
-ok( !$import_error, 'rerun import succeeds with existing records' ) or diag $import_error;
+ok( !$import_error, 'group nameserver import succeeds' ) or diag $import_error;
+
+eval { $bind->import_records('t/fixtures/import-bind.conf'); 1 };
+$import_error = $@;
+ok( !$import_error, 'group nameserver import rerun succeeds' ) or diag $import_error;
 
 my %parent_ns = map { $_->get('name') => 1 }
     $nt_api->get_usable_nameservers( nt_group_id => $parent_group->id )->list;
