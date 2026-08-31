@@ -221,11 +221,6 @@ sub doit {
             type    => 'A',
             ttl     => 3602
         },
-        {   name    => 'some.*.thing',
-            address => '1.1.1.5',
-            type    => 'A',
-            ttl     => 3603
-        },
         { name => 'x', address => $fqdn, type => 'NS', ttl => 300 },
         {   name    => 'x',
             address => $fqdn,
@@ -310,6 +305,17 @@ sub doit {
             $res = $user->delete_zone_record( nt_zone_record_id => $t );
             noerrok($res) or die "couldn't delete test record $t ";
         }
+    }
+
+    for my $name ( 'some.*', 'some.*.thing', '*.*.thing', '**', 'some*thing', '*something' ) {
+        $res = $zone1->new_zone_record(
+            name    => $name,
+            address => '1.1.1.5',
+            type    => 'A',
+            ttl     => 3603,
+        );
+        noerrok( $res, 300, "$name is not a wildcard owner" );
+        like( $res->get('error_msg'), qr/only \*\.something or \*/, 'reports the wildcard rule' );
     }
 
     #conflicting sub-zones and records
@@ -1064,4 +1070,3 @@ sub del {
         is( 1, 0, "Couldn't delete test group2" );
     }
 }
-
